@@ -24,6 +24,11 @@ from blockchainetl_common.jobs.exporters.console_item_exporter import ConsoleIte
 from blockchainetl_common.jobs.exporters.multi_item_exporter import MultiItemExporter
 
 
+polygon_zkevm_blocks
+polygon_zkevm_transactions
+polygon_zkevm_logs
+polygon_zkevm_token_transfers
+
 def get_kafka_topic_mapping():
     topic_prefix = 'polygon_zkevm'
     return {
@@ -32,7 +37,7 @@ def get_kafka_topic_mapping():
         'log': topic_prefix + '_logs',
         'token_transfer': topic_prefix + '_token_transfers',
         # todo(shashank): migrate mainnet consumers to new topic
-        'token_transfer_v2': topic_prefix + '_token_transfers_v2',
+       # 'token_transfer_v2': topic_prefix + '_token_transfers_v2',
         'trace': topic_prefix + '_traces',
         'contract': topic_prefix + '_contracts',
         'token': topic_prefix + '_tokens',
@@ -183,5 +188,6 @@ class ItemExporterType:
     PUBSUB = 'pubsub'
     POSTGRES = 'postgres'
     GCS = 'gcs'
+    KAFKA = 'kafka'
     CONSOLE = 'console'
     UNKNOWN = 'unknown'
