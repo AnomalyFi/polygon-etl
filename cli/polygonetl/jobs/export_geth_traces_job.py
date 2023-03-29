@@ -44,10 +44,9 @@ class ExportGethTracesJob(BaseJob):
         self.start_block = start_block
         self.end_block = end_block
 
-        self.batch_size = batch_size
         self.batch_web3_provider = batch_web3_provider
 
-        self.batch_work_executor = BatchWorkExecutor(batch_size, max_workers)
+        self.batch_work_executor = BatchWorkExecutor(batch_size, max_workers, name='ExportGethTraces')
         self.item_exporter = item_exporter
 
         self.geth_trace_mapper = EthGethTraceMapper()
@@ -59,15 +58,6 @@ class ExportGethTracesJob(BaseJob):
                     'Error for trace in block {block}. Need to retry. Error: {err}, trace: {trace}'
                         .format(block=block_number, trace=json.dumps(tx_trace), err=tx_trace.get('error'))
                 )
-            elif (
-                tx_trace.get('result').get('error') is None
-                and tx_trace.get('result').get('output') is None
-            ):
-                err = '`output` fields missing in traces file'
-                raise RetriableValueError(
-                    'Error for trace in block {block}. Need to retry. Error: {err}, result: {result}'
-                        .format(block=block_number, err=err, result=result)
-                )      
 
     def _start(self):
         self.item_exporter.open()
@@ -81,14 +71,7 @@ class ExportGethTracesJob(BaseJob):
 
     def _export_batch(self, block_number_batch):
         trace_block_rpc = list(generate_trace_block_by_number_json_rpc(block_number_batch))
-
-        # For nodes that don't support batch debug_traceBlockByNumber
-        if self.batch_size == 1:
-            request = json.dumps(trace_block_rpc[0])
-            response = [self.batch_web3_provider.make_batch_request(request)]
-        else:
-            request = json.dumps(trace_block_rpc)
-            response = self.batch_web3_provider.make_batch_request(request)
+        response = self.batch_web3_provider.make_batch_request(json.dumps(trace_block_rpc))
 
         for response_item in response:
             block_number = response_item.get('id')

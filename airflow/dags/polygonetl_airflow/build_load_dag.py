@@ -8,10 +8,11 @@ from datetime import datetime, timedelta
 from tempfile import TemporaryDirectory
 
 from airflow import models
-from airflow.providers.google.cloud.hooks.gcs import GCSHook
-from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator
-from airflow.operators.python import PythonOperator
-from airflow.sensors.external_task import ExternalTaskSensor
+from airflow.contrib.hooks.gcs_hook import GoogleCloudStorageHook
+from airflow.contrib.operators.bigquery_operator import BigQueryOperator
+from airflow.contrib.sensors.gcs_sensor import GoogleCloudStorageObjectSensor
+from airflow.operators.email_operator import EmailOperator
+from airflow.operators.python_operator import PythonOperator
 from google.cloud import bigquery
 from google.cloud.bigquery import TimePartitioning
 
@@ -33,8 +34,6 @@ def build_load_dag(
     chain='polygon',
     notification_emails=None,
     load_start_date=datetime(2018, 7, 1),
-    load_end_date=None,
-    load_catchup=False,
     load_schedule_interval='0 0 * * *',
     load_all_partitions=True
 ):
@@ -78,7 +77,6 @@ def build_load_dag(
     default_dag_args = {
         'depends_on_past': False,
         'start_date': load_start_date,
-        'end_date': load_end_date,
         'email_on_failure': True,
         'email_on_retry': False,
         'retries': 5,
@@ -92,27 +90,24 @@ def build_load_dag(
     # Define a DAG (directed acyclic graph) of tasks.
     dag = models.DAG(
         dag_id,
-        catchup=load_catchup,
+        catchup=False,
         schedule_interval=load_schedule_interval,
         default_args=default_dag_args)
 
     dags_folder = os.environ.get('DAGS_FOLDER', '/home/airflow/gcs/dags')
 
-    if not load_all_partitions:
-        wait_sensor = ExternalTaskSensor(
-            task_id="wait_export_dag",
-            external_dag_id=f"{chain}_export_dag",
-            external_task_id="export_complete",
-            execution_delta=timedelta(hours=5),
-            priority_weight=0,
-            mode="reschedule",
-            poke_interval=5 * 60,
-            timeout=8 * 60 * 60,
-            dag=dag,
+    def add_load_tasks(task, file_format, allow_quoted_newlines=False):
+        wait_sensor = GoogleCloudStorageObjectSensor(
+            task_id='wait_latest_{task}'.format(task=task),
+            timeout=12 * 60 * 60,
+            poke_interval=60,
+            bucket=output_bucket,
+            object='export/{task}/block_date={datestamp}/{task}.{file_format}'.format(
+                task=task, datestamp='{{ds}}', file_format=file_format),
+            dag=dag
         )
 
-    def add_load_tasks(task, file_format, allow_quoted_newlines=False):
-        def load_task(ds, **kwargs):
+        def load_task():
             client = bigquery.Client()
             job_config = bigquery.LoadJobConfig()
             schema_path = os.path.join(dags_folder, 'resources/stages/raw/schemas/{task}.json'.format(task=task))
@@ -125,34 +120,12 @@ def build_load_dag(
             job_config.ignore_unknown_values = True
 
             export_location_uri = 'gs://{bucket}/export'.format(bucket=output_bucket)
-            if load_all_partitions:
-                # Support export files that are missing EIP-1559 fields (exported before EIP-1559 upgrade)
-                job_config.allow_jagged_rows = True
-
-                uri = "{export_location_uri}/{task}/*.{file_format}".format(
-                    export_location_uri=export_location_uri,
-                    task=task,
-                    file_format=file_format,
-                )
-                table_ref = client.dataset(dataset_name_raw).table(task)
-            else:
-                uri = "{export_location_uri}/{task}/block_date={ds}/*.{file_format}".format(
-                    export_location_uri=export_location_uri,
-                    task=task,
-                    ds=ds,
-                    file_format=file_format,
-                )
-                table_name = f'{task}_{ds.replace("-", "_")}'
-                table_ref = client.dataset(dataset_name_raw).table(table_name)
-
+            uri = '{export_location_uri}/{task}/*.{file_format}'.format(
+                export_location_uri=export_location_uri, task=task, file_format=file_format)
+            table_ref = client.dataset(dataset_name_raw).table(task)
             load_job = client.load_table_from_uri(uri, table_ref, job_config=job_config)
             submit_bigquery_job(load_job, job_config)
             assert load_job.state == 'DONE'
-
-            if not load_all_partitions:
-                table = client.get_table(table_ref)
-                table.expires = datetime.now() + timedelta(days=3)
-                client.update_table(table, ["expires"])
 
         load_operator = PythonOperator(
             task_id='load_{task}'.format(task=task),
@@ -161,9 +134,7 @@ def build_load_dag(
             dag=dag
         )
 
-        if not load_all_partitions:
-            wait_sensor >> load_operator
-
+        wait_sensor >> load_operator
         return load_operator
 
     def add_enrich_tasks(task, time_partitioning_field='block_timestamp', dependencies=None, always_load_all_partitions=False):
@@ -171,11 +142,6 @@ def build_load_dag(
             template_context = kwargs.copy()
             template_context['ds'] = ds
             template_context['params'] = environment
-
-            if load_all_partitions or always_load_all_partitions:
-                template_context["params"]["ds_postfix"] = ""
-            else:
-                template_context["params"]["ds_postfix"] = "_" + ds.replace("-", "_")
 
             client = bigquery.Client()
 
@@ -207,7 +173,7 @@ def build_load_dag(
 
             sql_path = os.path.join(dags_folder, 'resources/stages/enrich/sqls/{task}.sql'.format(task=task))
             sql_template = read_file(sql_path)
-            sql = kwargs['task'].render_template(sql_template, template_context)
+            sql = kwargs['task'].render_template('', sql_template, template_context)
             print('Enrichment sql:')
             print(sql)
 
@@ -239,7 +205,7 @@ def build_load_dag(
                 merge_template_context['params']['source_table'] = temp_table_name
                 merge_template_context['params']['destination_dataset_project_id'] = destination_dataset_project_id
                 merge_template_context['params']['destination_dataset_name'] = dataset_name
-                merge_sql = kwargs['task'].render_template(merge_sql_template, merge_template_context)
+                merge_sql = kwargs['task'].render_template('', merge_sql_template, merge_template_context)
                 print('Merge sql:')
                 print(merge_sql)
                 merge_job = client.query(merge_sql, location='US', job_config=merge_job_config)
@@ -252,6 +218,7 @@ def build_load_dag(
         enrich_operator = PythonOperator(
             task_id='enrich_{task}'.format(task=task),
             python_callable=enrich_task,
+            provide_context=True,
             execution_timeout=timedelta(minutes=60),
             dag=dag
         )
@@ -267,35 +234,35 @@ def build_load_dag(
         # and legacy SQL can't be used to query partitioned tables.
         sql_path = os.path.join(dags_folder, 'resources/stages/verify/sqls/{task}.sql'.format(task=task))
         sql = read_file(sql_path)
-        verify_task = BigQueryInsertJobOperator(
-            task_id=f"verify_{task}",
-            configuration={"query": {"query": sql, "useLegacySql": False}},
+        verify_task = BigQueryOperator(
+            task_id='verify_{task}'.format(task=task),
+            bql=sql,
             params=environment,
-            dag=dag,
-        )
+            use_legacy_sql=False,
+            dag=dag)
         if dependencies is not None and len(dependencies) > 0:
             for dependency in dependencies:
                 dependency >> verify_task
         return verify_task
 
     def add_save_checkpoint_tasks(dependencies=None):
-        def save_checkpoint(logical_date, **kwargs):
+        def save_checkpoint(execution_date, **kwargs):
             with TemporaryDirectory() as tempdir:
                 local_path = os.path.join(tempdir, "checkpoint.txt")
                 remote_path = "load/checkpoint/block_date={block_date}/checkpoint.txt".format(
-                    block_date=logical_date.strftime("%Y-%m-%d")
+                    block_date=execution_date.strftime("%Y-%m-%d")
                 )
                 open(local_path, mode='a').close()
                 upload_to_gcs(
-                    gcs_hook=GCSHook(gcp_conn_id="google_cloud_default"),
+                    gcs_hook=GoogleCloudStorageHook(google_cloud_storage_conn_id="google_cloud_default"),
                     bucket=checkpoint_bucket,
                     object=remote_path,
-                    filename=local_path,
-                )
+                    filename=local_path)
 
         save_checkpoint_task = PythonOperator(
             task_id='save_checkpoint',
             python_callable=save_checkpoint,
+            provide_context=True,
             execution_timeout=timedelta(hours=1),
             dag=dag,
         )

@@ -20,9 +20,6 @@ def read_export_dag_vars(var_prefix, **kwargs):
     export_max_active_runs = read_var('export_max_active_runs', var_prefix, False, **kwargs)
     export_max_active_runs = int(export_max_active_runs) if export_max_active_runs is not None else None
 
-    export_max_active_tasks = read_var('export_max_active_tasks', var_prefix, False, **kwargs)
-    export_max_active_tasks = int(export_max_active_tasks) if export_max_active_tasks is not None else None
-
     vars = {
         'output_bucket': read_var('output_bucket', var_prefix, True, **kwargs),
         'export_start_date': export_start_date,
@@ -32,7 +29,6 @@ def read_export_dag_vars(var_prefix, **kwargs):
         'provider_uris_archival': provider_uris_archival,
         'notification_emails': read_var('notification_emails', None, False, **kwargs),
         'export_max_active_runs': export_max_active_runs,
-        'export_max_active_tasks': export_max_active_tasks,
         'export_max_workers': int(read_var('export_max_workers', var_prefix, True, **kwargs)),
         'export_traces_max_workers': int(read_var('export_traces_max_workers', var_prefix, True, **kwargs)),
     }
@@ -54,13 +50,7 @@ def read_load_dag_vars(var_prefix, **kwargs):
         # 'success_notification_emails': read_var('success_notification_emails', None, False, **kwargs),
         'load_schedule_interval': read_var('load_schedule_interval', var_prefix, True, **kwargs),
         'load_all_partitions': parse_bool(read_var('load_all_partitions', var_prefix, False, **kwargs), default=None),
-        'load_catchup': parse_bool(read_var('load_catchup', var_prefix, False, **kwargs), default=False),
     }
-
-    load_start_date = read_var('load_start_date', var_prefix, False, **kwargs)
-    if load_start_date is not None:
-        load_start_date = datetime.strptime(load_start_date, '%Y-%m-%d')
-        vars['load_start_date'] = load_start_date
 
     load_end_date = read_var('load_end_date', var_prefix, False, **kwargs)
     if load_end_date is not None:
@@ -69,43 +59,16 @@ def read_load_dag_vars(var_prefix, **kwargs):
 
     return vars
 
-
-def read_partition_dag_vars(var_prefix, **kwargs):
+def read_parse_dag_vars(var_prefix, dataset, **kwargs):
+    per_dataset_var_prefix = var_prefix + dataset + '_'
     vars = {
-        # public_project_id arg takes its value from destination_dataset_project_id
-        "public_project_id": read_var(
-            "destination_dataset_project_id", var_prefix, True, **kwargs
-        ),
-        "partitioned_project_id": read_var(
-            "partitioned_project_id", var_prefix, True, **kwargs
-        ),
-        "partition_schedule_interval": read_var(
-            "partition_schedule_interval", var_prefix, False, **kwargs
-        ),
-        "notification_emails": read_var("notification_emails", None, False, **kwargs),
-    }
-
-    partition_start_date = read_var("partition_start_date", var_prefix, False, **kwargs)
-    if partition_start_date is not None:
-        partition_start_date = datetime.strptime(partition_start_date, "%Y-%m-%d")
-        vars["partition_start_date"] = partition_start_date
-
-    return vars
-
-
-def read_parse_dag_vars(var_prefix, **kwargs):
-    vars = {
-        # source_project_id takes its value from destination_dataset_project_id
-        'source_project_id': read_var('destination_dataset_project_id', var_prefix, True, **kwargs),
-        # internal_project_id takes its value from partitioned_project_id
-        'internal_project_id': read_var('partitioned_project_id', var_prefix, True, **kwargs),
         'parse_destination_dataset_project_id': read_var('parse_destination_dataset_project_id', var_prefix, True, **kwargs),
-        'parse_schedule_interval': read_var('parse_schedule_interval', var_prefix, True, **kwargs),
-        'parse_all_partitions': parse_bool(read_var('parse_all_partitions', var_prefix, False), default=None),
+        'schedule_interval': read_var('schedule_interval', var_prefix, True, **kwargs),
+        'parse_all_partitions': parse_bool(read_var('parse_all_partitions', per_dataset_var_prefix, False), default=None),
         'notification_emails': read_var('notification_emails', None, False, **kwargs),
     }
 
-    parse_start_date = read_var('parse_start_date', var_prefix, False, **kwargs)
+    parse_start_date = read_var('parse_start_date', vars, False, **kwargs)
     if parse_start_date is not None:
         parse_start_date = datetime.strptime(parse_start_date, '%Y-%m-%d')
         vars['parse_start_date'] = parse_start_date

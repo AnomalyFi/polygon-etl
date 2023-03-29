@@ -3,7 +3,7 @@
 ## blocks.csv
 
 | Column            | Type       |
-|-------------------|------------|
+| ----------------- | ---------- |
 | number            | bigint     |
 | hash              | hex_string |
 | parent_hash       | hex_string |
@@ -22,29 +22,25 @@
 | gas_used          | bigint     |
 | timestamp         | bigint     |
 | transaction_count | bigint     |
-| base_fee_per_gas  | bigint     |
 
 ---
 
 ## transactions.csv
 
-| Column                   | Type       |
-|--------------------------|------------|
-| hash                     | hex_string |
-| nonce                    | bigint     |
-| block_hash               | hex_string |
-| block_number             | bigint     |
-| transaction_index        | bigint     |
-| from_address             | address    |
-| to_address               | address    |
-| value                    | numeric    |
-| gas                      | bigint     |
-| gas_price                | bigint     |
-| input                    | hex_string |
-| block_timestamp          | bigint     |
-| max_fee_per_gas          | bigint     |
-| max_priority_fee_per_gas | bigint     |
-| transaction_type         | bigint     |
+| Column            | Type       |
+| ----------------- | ---------- |
+| hash              | hex_string |
+| nonce             | bigint     |
+| block_hash        | hex_string |
+| block_number      | bigint     |
+| transaction_index | bigint     |
+| from_address      | address    |
+| to_address        | address    |
+| value             | numeric    |
+| gas               | bigint     |
+| gas_price         | bigint     |
+| input             | hex_string |
+| block_timestamp   | bigint     |
 
 ---
 
@@ -65,7 +61,7 @@
 ## receipts.csv
 
 | Column              | Type       |
-|---------------------|------------|
+| ------------------- | ---------- |
 | transaction_hash    | hex_string |
 | transaction_index   | bigint     |
 | block_hash          | hex_string |
@@ -75,7 +71,6 @@
 | contract_address    | address    |
 | root                | hex_string |
 | status              | bigint     |
-| effective_gas_price | bigint     |
 
 ---
 

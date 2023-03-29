@@ -19,11 +19,7 @@ insert (
     receipt_status,
     block_timestamp,
     block_number,
-    block_hash,
-    max_fee_per_gas,
-    max_priority_fee_per_gas,
-    transaction_type,
-    receipt_effective_gas_price
+    block_hash
 ) values (
     `hash`,
     nonce,
@@ -41,11 +37,7 @@ insert (
     receipt_status,
     block_timestamp,
     block_number,
-    block_hash,
-    max_fee_per_gas,
-    max_priority_fee_per_gas,
-    transaction_type,
-    receipt_effective_gas_price
+    block_hash
 )
 when not matched by source and date(block_timestamp) = '{{ds}}' then
 delete

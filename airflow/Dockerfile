@@ -1,23 +1,25 @@
 # Expected context is repository root
 # This makes cli folder is accessible for copy and install
-# docker build -f ./Dockerfile -t polygon-etl-tests ..
+# docker build -f . -t polygon-etl-airflow-tests ..
 
-FROM python:3.8.12
+FROM python:3.6.10
 
-WORKDIR /app
+WORKDIR /airflow
 
-RUN pip install --upgrade pip
-
-COPY pytest.ini requirements_test.txt airflow/requirements* .
+COPY requirements_test.txt requirements_test.txt
+COPY airflow/requirements_local.txt requirements_local.txt
+COPY airflow/requirements.txt requirements.txt
 
 RUN pip install \
+    --upgrade pip \
     -r requirements_test.txt \
     -r requirements_local.txt
 
-COPY cli cli
+COPY cli ../cli
 RUN pip install \
-    -e cli \
-    -r requirements_airflow.txt
+    -e ../cli \
+    -r requirements.txt
 
-COPY airflow airflow
+COPY airflow/tests tests
+COPY airflow/dags dags
 ENTRYPOINT pytest -vv

@@ -73,18 +73,14 @@ def enrich_transactions(transactions, receipts):
             'input',
             'block_timestamp',
             'block_number',
-            'block_hash',
-            'max_fee_per_gas',
-            'max_priority_fee_per_gas',
-            'transaction_type'
+            'block_hash'
         ],
         right_fields=[
             ('cumulative_gas_used', 'receipt_cumulative_gas_used'),
             ('gas_used', 'receipt_gas_used'),
             ('contract_address', 'receipt_contract_address'),
             ('root', 'receipt_root'),
-            ('status', 'receipt_status'),
-            ('effective_gas_price', 'receipt_effective_gas_price')
+            ('status', 'receipt_status')
         ]))
 
     if len(result) != len(transactions):

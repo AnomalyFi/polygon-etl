@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 import click
+
 from polygonetl.cli.export_all import export_all
 from polygonetl.cli.export_blocks_and_transactions import export_blocks_and_transactions
 from polygonetl.cli.export_contracts import export_contracts
@@ -42,7 +43,7 @@ from polygonetl.cli.stream import stream
 
 
 @click.group()
-@click.version_option(version="0.3.5")
+@click.version_option(version='0.2.0')
 @click.pass_context
 def cli(ctx):
     pass

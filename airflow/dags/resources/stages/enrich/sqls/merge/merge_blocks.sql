@@ -20,8 +20,7 @@ insert (
     extra_data,
     gas_limit,
     gas_used,
-    transaction_count,
-    base_fee_per_gas
+    transaction_count
 ) values (
     timestamp,
     number,
@@ -40,8 +39,7 @@ insert (
     extra_data,
     gas_limit,
     gas_used,
-    transaction_count,
-    base_fee_per_gas
+    transaction_count
 )
 when not matched by source and date(timestamp) = '{{ds}}' then
 delete
