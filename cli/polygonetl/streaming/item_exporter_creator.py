@@ -24,6 +24,21 @@ from blockchainetl_common.jobs.exporters.console_item_exporter import ConsoleIte
 from blockchainetl_common.jobs.exporters.multi_item_exporter import MultiItemExporter
 
 
+def get_kafka_topic_mapping():
+    topic_prefix = 'polygon_zkevm'
+    return {
+        'block': topic_prefix + '_blocks',
+        'transaction': topic_prefix + '_transactions',
+        'log': topic_prefix + '_logs',
+        'token_transfer': topic_prefix + '_token_transfers',
+        # todo(shashank): migrate mainnet consumers to new topic
+        'token_transfer_v2': topic_prefix + '_token_transfers_v2',
+        'trace': topic_prefix + '_traces',
+        'contract': topic_prefix + '_contracts',
+        'token': topic_prefix + '_tokens',
+    }
+
+
 def create_item_exporters(outputs, chunk_size, max_workers):
     split_outputs = [output.strip() for output in outputs.split(',')] if outputs else ['console']
 
@@ -34,54 +49,110 @@ def create_item_exporters(outputs, chunk_size, max_workers):
 def create_item_exporter(output, chunk_size, max_workers):
     item_exporter_type = determine_item_exporter_type(output)
     if item_exporter_type == ItemExporterType.PUBSUB:
-        from blockchainetl_common.jobs.exporters.google_pubsub_item_exporter import GooglePubSubItemExporter
-        enable_message_ordering = 'sorted' in output
-        item_exporter = GooglePubSubItemExporter(item_type_to_topic_mapping={
-            'block': output + '.blocks',
-            'transaction': output + '.transactions',
-            'log': output + '.logs',
-            'token_transfer': output + '.token_transfers',
-            'trace': output + '.traces',
-            'contract': output + '.contracts',
-            'token': output + '.tokens',
-        },
-        message_attributes=('item_id',),
-        batch_max_bytes=1024 * 1024 * 5,
-        batch_max_latency=5,
-        batch_max_messages=1000,
-        enable_message_ordering=enable_message_ordering)
-    elif item_exporter_type == ItemExporterType.POSTGRES:
-        from blockchainetl.jobs.exporters.postgres_item_exporter import PostgresItemExporter
-        from blockchainetl.streaming.postgres_utils import create_insert_statement_for_table
-        from blockchainetl.jobs.exporters.converters.unix_timestamp_item_converter import UnixTimestampItemConverter
-        from blockchainetl.jobs.exporters.converters.int_to_decimal_item_converter import IntToDecimalItemConverter
-        from blockchainetl.jobs.exporters.converters.list_field_item_converter import ListFieldItemConverter
-        from polygonetl.streaming.postgres_tables import BLOCKS, TRANSACTIONS, LOGS, TOKEN_TRANSFERS, TRACES
-
-        item_exporter = PostgresItemExporter(
-            output, item_type_to_insert_stmt_mapping={
-                'block': create_insert_statement_for_table(BLOCKS),
-                'transaction': create_insert_statement_for_table(TRANSACTIONS),
-                'log': create_insert_statement_for_table(LOGS),
-                'token_transfer': create_insert_statement_for_table(TOKEN_TRANSFERS),
-                'trace': create_insert_statement_for_table(TRACES),
+        from blockchainetl.jobs.exporters.google_pubsub_item_exporter import GooglePubSubItemExporter
+        enable_message_ordering = 'sorted' in output or 'ordered' in output
+        item_exporter = GooglePubSubItemExporter(
+            item_type_to_topic_mapping={
+                'block': output + '.blocks',
+                'transaction': output + '.transactions',
+                'log': output + '.logs',
+                'token_transfer': output + '.token_transfers',
+                'trace': output + '.traces',
+                'contract': output + '.contracts',
+                'token': output + '.tokens',
             },
-            converters=[UnixTimestampItemConverter(), IntToDecimalItemConverter(),
-                        ListFieldItemConverter('topics', 'topic', fill=4)],
-            print_sql=False,
-            chunk_size=chunk_size,
-            max_workers=max_workers
-        )
-    elif item_exporter_type == ItemExporterType.GCS:
-        from blockchainetl_common.jobs.exporters.gcs_item_exporter import GcsItemExporter
-        bucket, path = get_bucket_and_path_from_gcs_output(output)
-        item_exporter = GcsItemExporter(bucket=bucket, path=path)
+            message_attributes=('item_id', 'item_timestamp'),
+            batch_max_bytes=1024 * 1024 * 5,
+            batch_max_latency=2,
+            batch_max_messages=1000,
+            enable_message_ordering=enable_message_ordering)
+   # elif item_exporter_type == ItemExporterType.POSTGRES:
+    #     from blockchainetl.jobs.exporters.postgres_item_exporter import PostgresItemExporter
+    #     from blockchainetl.streaming.postgres_utils import create_insert_statement_for_table
+    #     from blockchainetl.jobs.exporters.converters.unix_timestamp_item_converter import UnixTimestampItemConverter
+    #     from blockchainetl.jobs.exporters.converters.int_to_decimal_item_converter import IntToDecimalItemConverter
+    #     from blockchainetl.jobs.exporters.converters.list_field_item_converter import ListFieldItemConverter
+    #     from polygonetl.streaming.postgres_tables import BLOCKS, TRANSACTIONS, LOGS, TOKEN_TRANSFERS, TRACES
+
+    #     item_exporter = PostgresItemExporter(
+    #         output, item_type_to_insert_stmt_mapping={
+    #             'block': create_insert_statement_for_table(BLOCKS),
+    #             'transaction': create_insert_statement_for_table(TRANSACTIONS),
+    #             'log': create_insert_statement_for_table(LOGS),
+    #             'token_transfer': create_insert_statement_for_table(TOKEN_TRANSFERS),
+    #             'trace': create_insert_statement_for_table(TRACES),
+    #         },
+    #         converters=[UnixTimestampItemConverter(), IntToDecimalItemConverter(),
+    #                     ListFieldItemConverter('topics', 'topic', fill=4)],
+    #         print_sql=False,
+    #         chunk_size=chunk_size,
+    #         max_workers=max_workers
+    #     )
+    # elif item_exporter_type == ItemExporterType.GCS:
+    #     from blockchainetl.jobs.exporters.gcs_item_exporter import GcsItemExporter
+    #     bucket, path = get_bucket_and_path_from_gcs_output(output)
+    #     item_exporter = GcsItemExporter(bucket=bucket, path=path)
     elif item_exporter_type == ItemExporterType.CONSOLE:
         item_exporter = ConsoleItemExporter()
+    elif item_exporter_type == ItemExporterType.KAFKA:
+        from blockchainetl.jobs.exporters.kafka_exporter import KafkaItemExporter
+        #from blockchainetl.jobs.exporters.converters.chain_id_converter import ChainIdConverter
+        item_exporter = KafkaItemExporter(output, item_type_to_topic_mapping=get_kafka_topic_mapping()) 
+
     else:
         raise ValueError('Unable to determine item exporter type for output ' + output)
 
     return item_exporter
+    # item_exporter_type = determine_item_exporter_type(output)
+    # if item_exporter_type == ItemExporterType.PUBSUB:
+    #     from blockchainetl_common.jobs.exporters.google_pubsub_item_exporter import GooglePubSubItemExporter
+    #     enable_message_ordering = 'sorted' in output
+    #     item_exporter = GooglePubSubItemExporter(item_type_to_topic_mapping={
+    #         'block': output + '.blocks',
+    #         'transaction': output + '.transactions',
+    #         'log': output + '.logs',
+    #         'token_transfer': output + '.token_transfers',
+    #         'trace': output + '.traces',
+    #         'contract': output + '.contracts',
+    #         'token': output + '.tokens',
+    #     },
+    #     message_attributes=('item_id',),
+    #     batch_max_bytes=1024 * 1024 * 5,
+    #     batch_max_latency=5,
+    #     batch_max_messages=1000,
+    #     enable_message_ordering=enable_message_ordering)
+    # elif item_exporter_type == ItemExporterType.POSTGRES:
+    #     from blockchainetl.jobs.exporters.postgres_item_exporter import PostgresItemExporter
+    #     from blockchainetl.streaming.postgres_utils import create_insert_statement_for_table
+    #     from blockchainetl.jobs.exporters.converters.unix_timestamp_item_converter import UnixTimestampItemConverter
+    #     from blockchainetl.jobs.exporters.converters.int_to_decimal_item_converter import IntToDecimalItemConverter
+    #     from blockchainetl.jobs.exporters.converters.list_field_item_converter import ListFieldItemConverter
+    #     from polygonetl.streaming.postgres_tables import BLOCKS, TRANSACTIONS, LOGS, TOKEN_TRANSFERS, TRACES
+
+    #     item_exporter = PostgresItemExporter(
+    #         output, item_type_to_insert_stmt_mapping={
+    #             'block': create_insert_statement_for_table(BLOCKS),
+    #             'transaction': create_insert_statement_for_table(TRANSACTIONS),
+    #             'log': create_insert_statement_for_table(LOGS),
+    #             'token_transfer': create_insert_statement_for_table(TOKEN_TRANSFERS),
+    #             'trace': create_insert_statement_for_table(TRACES),
+    #         },
+    #         converters=[UnixTimestampItemConverter(), IntToDecimalItemConverter(),
+    #                     ListFieldItemConverter('topics', 'topic', fill=4)],
+    #         print_sql=False,
+    #         chunk_size=chunk_size,
+    #         max_workers=max_workers
+    #     )
+    # elif item_exporter_type == ItemExporterType.GCS:
+    #     from blockchainetl_common.jobs.exporters.gcs_item_exporter import GcsItemExporter
+    #     bucket, path = get_bucket_and_path_from_gcs_output(output)
+    #     item_exporter = GcsItemExporter(bucket=bucket, path=path)
+    # elif item_exporter_type == ItemExporterType.CONSOLE:
+    #     item_exporter = ConsoleItemExporter()
+    # else:
+    #     raise ValueError('Unable to determine item exporter type for output ' + output)
+
+    # return item_exporter
 
 
 def get_bucket_and_path_from_gcs_output(output):
