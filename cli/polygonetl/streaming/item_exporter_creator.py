@@ -24,10 +24,7 @@ from blockchainetl_common.jobs.exporters.console_item_exporter import ConsoleIte
 from blockchainetl_common.jobs.exporters.multi_item_exporter import MultiItemExporter
 
 
-polygon_zkevm_blocks
-polygon_zkevm_transactions
-polygon_zkevm_logs
-polygon_zkevm_token_transfers
+
 
 def get_kafka_topic_mapping():
     topic_prefix = 'polygon_zkevm'
@@ -174,6 +171,8 @@ def get_bucket_and_path_from_gcs_output(output):
 def determine_item_exporter_type(output):
     if output is not None and output.startswith('projects'):
         return ItemExporterType.PUBSUB
+    if output is not None and output.startswith('kafka'):
+        return ItemExporterType.KAFKA
     elif output is not None and output.startswith('postgresql'):
         return ItemExporterType.POSTGRES
     elif output is not None and output.startswith('gs://'):
